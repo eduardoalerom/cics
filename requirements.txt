@@ -2,3 +2,4 @@ streamlit
 pandas
 plotly-express
 xlsxwriter
+matplotlib>=3.5
