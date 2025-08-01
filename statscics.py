@@ -12,7 +12,7 @@ st.set_page_config(
 )
 
 # Sidebar: logo y título
-st.sidebar.image("logo_infonavit.png", width=100)
+st.sidebar.image("https://www.axway.com/sites/default/files/2020-04/Versaria.jpg", width=100)
 st.sidebar.title("📊  Estadísticas INFONAVIT")
 
 # Cabecera y descripción
