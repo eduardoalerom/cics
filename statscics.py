@@ -1,8 +1,14 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.io as pio
 import io
 from matplotlib.backends.backend_pdf import PdfPages
+
+# -------------------------------------------------------
+# Kaleido: asegurar que plotly.to_image funcione
+# -------------------------------------------------------
+pio.kaleido.scope.default_format = "png"
 
 # -------------------------------------------------------
 # 1) Configuración de la página
@@ -125,16 +131,17 @@ if st.sidebar.button("📧 Enviar por correo"):
 if st.sidebar.button("📄 Exportar como PDF"):
     pdf_buffer = io.BytesIO()
     with PdfPages(pdf_buffer) as pdf:
-        # Portada
+        # 8.1) Portada con Plotly + Kaleido
         fig_portada = px.scatter(x=[None], y=[None])
         fig_portada.update_layout(
             title_text=f"Reporte INFONAVIT - {mes_seleccionado_label}",
             xaxis_visible=False, yaxis_visible=False,
             width=600, height=400
         )
-        pdf.savefig(fig_portada.to_image(format='png'))
+        img1 = fig_portada.to_image(format='png', engine='kaleido')
+        pdf.savefig(io.BytesIO(img1))
 
-        # Resumen mensual
+        # 8.2) Resumen mensual total por DATO
         df_resumen = df[
             (df['MES'] == mes_seleccionado) &
             (df['LPAR'].isin(selected_envs))
@@ -142,10 +149,12 @@ if st.sidebar.button("📄 Exportar como PDF"):
         resumen_mensual = df_resumen.groupby('DATO')['USO'].sum().reset_index()
         fig_resumen = px.bar(
             resumen_mensual,
-            x='DATO', y='USO',
+            x='DATO',
+            y='USO',
             title='Uso Total por Categoría (Mes)'
         )
-        pdf.savefig(fig_resumen.to_image(format='png'))
+        img2 = fig_resumen.to_image(format='png', engine='kaleido')
+        pdf.savefig(io.BytesIO(img2))
 
     pdf_buffer.seek(0)
     st.sidebar.download_button(
@@ -193,7 +202,6 @@ for entorno in selected_envs:
             st.markdown("---")
             continue
 
-        # Consumo total, máximo y mínimo, top app
         consumo_total = df_cat_dia['USO'].sum()
         agg_hora = df_cat_dia.groupby('HORA')['USO'].sum()
         max_val = agg_hora.max()
@@ -211,7 +219,6 @@ for entorno in selected_envs:
         # 10.3.7) Gráfica de uso por hora
         multiline_cats = ['TRANSACCION', 'WEB SERVICES', 'WEBSERVICE', 'WEBSERVICES']
         if categoria in multiline_cats:
-            # una línea por aplicación
             df_app_hour = (
                 df_cat_dia
                 .groupby(['HORA', 'APLICACION'])['USO']
@@ -229,7 +236,6 @@ for entorno in selected_envs:
                 markers=True
             )
         else:
-            # curva agregada
             df_plot = agg_hora.reset_index()
             df_plot['HORA_STR'] = df_plot['HORA']\
                 .apply(lambda t: t.strftime("%H:%M") if hasattr(t, "strftime") else "")
@@ -283,7 +289,6 @@ for entorno in selected_envs:
         )
         st.plotly_chart(fig2, use_container_width=True)
 
-        # Día pico
         pico_idx = agg_dia['USO'].idxmax()
         dia_pico = agg_dia.loc[pico_idx, 'DIA_SEM']
         valor_pico = agg_dia.loc[pico_idx, 'USO']
