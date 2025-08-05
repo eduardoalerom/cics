@@ -1,14 +1,10 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.io as pio
 import io
 from matplotlib.backends.backend_pdf import PdfPages
-
-# -------------------------------------------------------
-# Kaleido: asegurar que plotly.to_image funcione
-# -------------------------------------------------------
-pio.kaleido.scope.default_format = "png"
+from PIL import Image
+import matplotlib.pyplot as plt
 
 # -------------------------------------------------------
 # 1) Configuración de la página
@@ -75,18 +71,12 @@ df['APLICACION'] = (
       .replace({'MIPS': 'CPU'})
 )
 df['FECHA'] = pd.to_datetime(df['FECHA'], dayfirst=True, errors='coerce')
-
 hora_texto = (
     df['HORA']
       .str.replace(' a. m.', ' AM', regex=False)
       .str.replace(' p. m.', ' PM', regex=False)
 )
-df['HORA'] = pd.to_datetime(
-    hora_texto,
-    format='%I:%M:%S %p',
-    errors='coerce'
-).dt.time
-
+df['HORA'] = pd.to_datetime(hora_texto, format='%I:%M:%S %p', errors='coerce').dt.time
 df['USO'] = pd.to_numeric(df['USO'], errors='coerce').fillna(0)
 df['MES'] = df['FECHA'].dt.to_period('M').astype(str)
 
@@ -131,17 +121,22 @@ if st.sidebar.button("📧 Enviar por correo"):
 if st.sidebar.button("📄 Exportar como PDF"):
     pdf_buffer = io.BytesIO()
     with PdfPages(pdf_buffer) as pdf:
-        # 8.1) Portada con Plotly + Kaleido
+        # --- Portada ---
         fig_portada = px.scatter(x=[None], y=[None])
         fig_portada.update_layout(
             title_text=f"Reporte INFONAVIT - {mes_seleccionado_label}",
             xaxis_visible=False, yaxis_visible=False,
             width=600, height=400
         )
-        img1 = fig_portada.to_image(format='png', engine='kaleido')
-        pdf.savefig(io.BytesIO(img1))
+        img_bytes = fig_portada.to_image(format='png')
+        img = Image.open(io.BytesIO(img_bytes))
+        fig_mpl = plt.figure(figsize=(6,4))
+        plt.axis('off')
+        plt.imshow(img)
+        pdf.savefig(fig_mpl)
+        plt.close(fig_mpl)
 
-        # 8.2) Resumen mensual total por DATO
+        # --- Resumen mensual ---
         df_resumen = df[
             (df['MES'] == mes_seleccionado) &
             (df['LPAR'].isin(selected_envs))
@@ -149,12 +144,17 @@ if st.sidebar.button("📄 Exportar como PDF"):
         resumen_mensual = df_resumen.groupby('DATO')['USO'].sum().reset_index()
         fig_resumen = px.bar(
             resumen_mensual,
-            x='DATO',
-            y='USO',
-            title='Uso Total por Categoría (Mes)'
+            x='DATO', y='USO',
+            title='Uso Total por Categoría (Mes)',
+            width=600, height=400
         )
-        img2 = fig_resumen.to_image(format='png', engine='kaleido')
-        pdf.savefig(io.BytesIO(img2))
+        img2_bytes = fig_resumen.to_image(format='png')
+        img2 = Image.open(io.BytesIO(img2_bytes))
+        fig_mpl2 = plt.figure(figsize=(6,4))
+        plt.axis('off')
+        plt.imshow(img2)
+        pdf.savefig(fig_mpl2)
+        plt.close(fig_mpl2)
 
     pdf_buffer.seek(0)
     st.sidebar.download_button(
@@ -176,21 +176,24 @@ categorias = sorted(df_filtrado['DATO'].unique())
 # -------------------------------------------------------
 # 10) Proceso para cada LPAR seleccionado
 # -------------------------------------------------------
+weekday_map = {
+    0: 'Lunes', 1: 'Martes', 2: 'Miércoles',
+    3: 'Jueves', 4: 'Viernes', 5: 'Sábado', 6: 'Domingo'
+}
+
 for entorno in selected_envs:
     st.header(f"🌐 Entorno: {entorno}")
     df_entorno = df_filtrado[df_filtrado['LPAR'] == entorno]
 
-    # 10.2) Métricas totales mensuales
+    # Métricas totales mensuales
     st.subheader("📊 Métricas Totales Mensuales")
     df_totales_mes = df_entorno.groupby('DATO')['USO'].sum().reset_index()
     cols_totales = st.columns(len(categorias))
     for idx, categoria in enumerate(categorias):
-        valor_total = df_totales_mes.loc[
-            df_totales_mes['DATO'] == categoria, 'USO'
-        ].sum()
+        valor_total = df_totales_mes.loc[df_totales_mes['DATO'] == categoria, 'USO'].sum()
         cols_totales[idx].metric(f"{categoria} totales", f"{valor_total:,.0f}")
 
-    # 10.3) Detalle diario
+    # Detalle diario
     st.subheader(f"🗓 Detalle Diario ({dia_seleccionado})")
     df_dia = df_entorno[df_entorno['FECHA'].dt.date == dia_seleccionado]
 
@@ -202,12 +205,11 @@ for entorno in selected_envs:
             st.markdown("---")
             continue
 
+        # Consumo total, max/min y app top
         consumo_total = df_cat_dia['USO'].sum()
         agg_hora = df_cat_dia.groupby('HORA')['USO'].sum()
-        max_val = agg_hora.max()
-        hora_max = agg_hora.idxmax().strftime("%H:%M")
-        min_val = agg_hora.min()
-        hora_min = agg_hora.idxmin().strftime("%H:%M")
+        max_val = agg_hora.max(); hora_max = agg_hora.idxmax().strftime("%H:%M")
+        min_val = agg_hora.min(); hora_min = agg_hora.idxmin().strftime("%H:%M")
         app_top = df_cat_dia.groupby('APLICACION')['USO'].sum().idxmax()
 
         c1, c2, c3, c4 = st.columns(4)
@@ -216,33 +218,29 @@ for entorno in selected_envs:
         c3.metric("Mínimo x hora", f"{min_val:,.2f}", hora_min)
         c4.metric("App con más uso", app_top)
 
-        # 10.3.7) Gráfica de uso por hora
-        multiline_cats = ['TRANSACCION', 'WEB SERVICES', 'WEBSERVICE', 'WEBSERVICES']
-        if categoria in multiline_cats:
+        # Gráfica de uso por hora (multilínea en WS/CPS)
+        multiline = ['TRANSACCION', 'WEB SERVICES', 'WEBSERVICE', 'WEBSERVICES']
+        if categoria in multiline:
             df_app_hour = (
                 df_cat_dia
-                .groupby(['HORA', 'APLICACION'])['USO']
-                .sum()
-                .reset_index()
+                  .groupby(['HORA','APLICACION'])['USO']
+                  .sum()
+                  .reset_index()
             )
-            df_app_hour['HORA_STR'] = df_app_hour['HORA']\
-                .apply(lambda t: t.strftime("%H:%M") if hasattr(t, "strftime") else "")
+            df_app_hour['HORA_STR'] = df_app_hour['HORA'].apply(lambda t: t.strftime("%H:%M"))
             fig = px.line(
                 df_app_hour,
-                x='HORA_STR',
-                y='USO',
+                x='HORA_STR', y='USO',
                 color='APLICACION',
                 title=f"Uso horario de {categoria}",
                 markers=True
             )
         else:
             df_plot = agg_hora.reset_index()
-            df_plot['HORA_STR'] = df_plot['HORA']\
-                .apply(lambda t: t.strftime("%H:%M") if hasattr(t, "strftime") else "")
+            df_plot['HORA_STR'] = df_plot['HORA'].apply(lambda t: t.strftime("%H:%M"))
             fig = px.line(
                 df_plot,
-                x='HORA_STR',
-                y='USO',
+                x='HORA_STR', y='USO',
                 title=f"Uso horario de {categoria}",
                 markers=True
             )
@@ -250,13 +248,8 @@ for entorno in selected_envs:
         st.plotly_chart(fig, use_container_width=True)
         st.markdown("---")
 
-    # 10.4) Acumulado diario mensual con días de semana
+    # Acumulado diario en el mes con nombre de día
     st.subheader("📈 Acumulado diario en el mes")
-    weekday_map = {
-        0: 'Lunes', 1: 'Martes', 2: 'Miércoles',
-        3: 'Jueves', 4: 'Viernes', 5: 'Sábado', 6: 'Domingo'
-    }
-
     for categoria in categorias:
         st.markdown(f"### Categoría: {categoria}")
         df_cat_mon = df_entorno[df_entorno['DATO'] == categoria].copy()
@@ -266,19 +259,12 @@ for entorno in selected_envs:
             continue
 
         df_cat_mon['FECHA_DIA'] = df_cat_mon['FECHA'].dt.date
-        agg_dia = (
-            df_cat_mon
-            .groupby('FECHA_DIA')['USO']
-            .sum()
-            .reset_index()
-        )
-        agg_dia['DIA_SEM'] = agg_dia['FECHA_DIA']\
-            .apply(lambda d: weekday_map[d.weekday()])
+        agg_dia = df_cat_mon.groupby('FECHA_DIA')['USO'].sum().reset_index()
+        agg_dia['DIA_SEM'] = agg_dia['FECHA_DIA'].apply(lambda d: weekday_map[d.weekday()])
 
         fig2 = px.line(
             agg_dia,
-            x='FECHA_DIA',
-            y='USO',
+            x='FECHA_DIA', y='USO',
             title=f"Acumulado diario: {categoria}",
             markers=True
         )
