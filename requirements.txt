@@ -3,3 +3,4 @@ pandas
 plotly-express
 xlsxwriter
 matplotlib>=3.5
+import plotly.express
