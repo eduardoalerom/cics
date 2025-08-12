@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 # 1) Configuración de la página
 # -------------------------------------------------------
 st.set_page_config(
-    page_title="Estadísticas INFONAVIT",
+    page_title="📊 CICS · INFONAVIT",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -295,3 +295,6 @@ for entorno in selected_envs:
 
         st.plotly_chart(fig2, use_container_width=True)
         st.markdown("---")
+
+# ==================== Footer ====================
+st.caption("Hecho con ❤️ por TEAM CICS | Versaria")
